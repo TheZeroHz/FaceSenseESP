@@ -1,7 +1,10 @@
-| **Test No.** | **Criteria (Lighting/Angle/Distance)**            | **Total Faces** | **Detected Faces** | **Recognized Faces** | **Recognition Accuracy** |
-|--------------|----------------------------------------------------|-----------------|--------------------|----------------------|--------------------------|
-| 1            | Good lighting, close range (1-2 meters)            | 100             | 98                 | 97                   | 97.00%                   |
-| 2            | Medium lighting, medium distance                   | 100             | 85                 | 85                   | 85.00%                   |
-| 3            | Face occlusions (e.g., glasses, masks)             | 100             | 70                 | 69                   | 69.00%                   |
-| 4            | Dynamic environment (moving faces)                 | 100             | 87                 | 85                   | 85.00%                   |
-| 5            | Side faces or tilted faces                         | 100             | 64                 | 62                   | 62.00%                   |
+\begin{table}[]
+\begin{tabular}{llllll}
+Test No & Criteria (Lighting/Angle/Distance)      & Total Faces & Detected Faces & Recognized Faces & Recognition Accuracy \\
+1       & Good lighting, close range (1-2 meters) & 100         & 98             & 97               & 97.00\%              \\
+2       & Medium lighting, medium distance        & 100         & 85             & 85               & 85.00\%              \\
+3       & Face occlusions (e.g., glasses, masks)  & 100         & 70             & 69               & 69.00\%              \\
+4       & Dynamic environment (moving faces)      & 100         & 87             & 85               & 85.00\%              \\
+5       & Side faces or tilted faces              & 100         & 64             & 62               & 62.00\%             
+\end{tabular}
+\end{table}
