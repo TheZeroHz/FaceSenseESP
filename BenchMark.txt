@@ -1,0 +1,7 @@
+| **Test No.** | **Criteria (Lighting/Angle/Distance)**            | **Total Faces** | **Detected Faces** | **Recognized Faces** | **No. of False Recognitions** |
+|--------------|----------------------------------------------------|-----------------|--------------------|----------------------|------------------------------|
+| 1            | Good lighting, close range (1-2 meters)            |                 |                    |                      |                              |
+| 2            | Medium lighting, medium distance                   |                 |                    |                      |                              |
+| 3            | Face occlusions (e.g., glasses, masks)             |                 |                    |                      |                              |
+| 4            | Dynamic environment (moving faces)                 |                 |                    |                      |                              |
+| 5            | Side faces or tilted faces                         |                 |                    |                      |                              |
