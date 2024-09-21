@@ -24,14 +24,22 @@
 #include <JPEGDecoder.h>
 
 
+//############ Shared Variable #################
+extern String USER_NAME,NER_USER_NAME;
+extern unsigned long fr_max_time,fr_timer;
+extern bool pauseCamTask;
+extern int8_t recognition_enabled;
+extern int8_t is_enrolling;
+extern int8_t detection_enabled;
+extern bool fr_res;
+
+
 // Return the minimum of two values a and b
 #define minimum(a,b)     (((a) < (b)) ? (a) : (b))
 #define SD_MMC_CMD 38  //Please do not modify it.
 #define SD_MMC_CLK 39  //Please do not modify it.
 #define SD_MMC_D0 40   //Please do not modify it.
-static int8_t recognition_enabled =0 ;
-static int8_t is_enrolling = 0;
-static int8_t detection_enabled = 0;
+
 FaceRecognition112V1S8 recognizer;
 // TFT display object
 TFT_eSPI tft = TFT_eSPI();
@@ -118,14 +126,8 @@ void draw_frame_on_tft(fb_data_t *fb) {
   tft.startWrite();
   tft.setAddrWindow(0, 0, fb->width, fb->height);
   tft.pushImage(0, 0, fb->width, fb->height, (uint16_t *)fb->data);
-  if (recognition_enabled) {
-    tft.fillRect(40, 40, 40,50, TFT_GREEN);
-  } else if (!recognition_enabled && detection_enabled) {
-    tft.fillRect(40, 40, 40,50, TFT_YELLOW);
-  } else {
-    tft.fillRect(40, 40, 40,50, TFT_BLUE);
-  }
   tft.endWrite();
+  vTaskDelay(50);
 }
 
 
@@ -142,13 +144,6 @@ void drawBGR888Image(int16_t x, int16_t y, int16_t w, int16_t h, const uint8_t *
       buffer[i] = (red & 0xF8) << 8 | (green & 0xFC) << 3 | (blue >> 3);
     }
     tft.pushColors(buffer, w, true);  // Send the row of pixels
-  }
-  if (recognition_enabled) {
-    tft.fillCircle(200, 40, 10, TFT_GREEN);
-  } else if (!recognition_enabled && detection_enabled) {
-    tft.fillCircle(200, 40, 10, TFT_YELLOW);
-  } else {
-    tft.fillCircle(200, 40, 10, TFT_BLUE);
   }
 tft.endWrite();
 }
@@ -188,7 +183,7 @@ static void draw_face_boxes(fb_data_t *fb, std::list<dl::detect::result_t> *resu
     if ((y + h) > fb->height) {
       h = fb->height - y;
     }
-    Serial.printf("Face Box:\n");
+    Serial.printf("\nFace Box:\n");
     Serial.printf("(x0,y0)=(%d,%d)\n",x,y);
     Serial.printf("(x1,y1)=(%d,%d)\n",x,y+h);
     Serial.printf("(x2,y2)=(%d,%d)\n",x,y);
@@ -223,48 +218,43 @@ static int run_face_recognition(fb_data_t *fb, std::list<dl::detect::result_t> *
     User newPerson;
     id = recognizer.enroll_id(tensor, landmarks, " ", true);
     newPerson.id = id;
-    newPerson.name = "rakib";
+    newPerson.name = NER_USER_NAME;
     newPerson.role = "admin";
     tft.println("trying to add " + newPerson.name);
-    delay(10000);
+    //delay(10000);
     if (id != -1 && addUser(newPerson)) {
-      tft.println(newPerson.name + " added as " + newPerson.role + " Successfully");
+      tft.println("Successfull");
     }
     tft.setTextColor(TFT_GREEN);
-    tft.setTextSize(2);
-    tft.setCursor(10, 120);
-    tft.println("Face Enrolled");
-    //ESP.restart();
-    Serial.printf("Enrolled ID: %d", id);
-
+    tft.println("Face Enrolled :-)");
     is_enrolling = 0;
+    //ESP.restart();
   }
 
   face_info_t recognize = recognizer.recognize(tensor, landmarks);
   if (recognize.id >= 0) {
     User knownPerson = searchUserById(recognize.id);
-    Serial.println("Hi, " + knownPerson.role + " " + knownPerson.name);
-    tft.println("Hi, " + knownPerson.role + " " + knownPerson.name);
     tft.setTextColor(TFT_GREEN);
-    tft.setTextSize(2);
-    tft.setCursor(80, 120);
-    Serial.printf("ID[%u]: %.2f", recognize.id, recognize.similarity);
-    tft.printf("ID[%u]: %.2f", recognize.id, recognize.similarity);
-  } else {
+    tft.setCursor(0, 10);
+    tft.printf("%s : %.2f", knownPerson.name, recognize.similarity);
+    USER_NAME=knownPerson.name;
+    fr_res=true;
+    tft.setRotation(2);         // Set the rotation of the TFT display if needed
+    tft.fillScreen(TFT_BLACK);  // Clear the display
+    } 
+  else {
     tft.setTextColor(TFT_RED);
-    tft.setTextSize(2);
-    tft.setCursor(80, 120);
-    tft.printf("Intruder Alert!");
+    tft.setCursor(0, 10);
+    tft.printf("! _ ! Sorry");
   }
   return recognize.id;
 }
 
-static esp_err_t LOOP() {
+void runCAM(void *pvParameters){
   person.name = "";
   person.id = -1;
   person.role = "";
   camera_fb_t *fb = NULL;
-  esp_err_t res = ESP_OK;
   size_t _jpg_buf_len = 0;
   uint8_t *_jpg_buf = NULL;
   bool detected = false;
@@ -276,12 +266,13 @@ static esp_err_t LOOP() {
   HumanFaceDetectMNP01 s2(0.5F, 0.3F, 5);
 
   while (true) {
+    if(!pauseCamTask){
     retry:
-    face_id = 0;
+    face_id = -1;
     fb = esp_camera_fb_get();
     if (!fb) {
       tft.println("Camera capture failed");
-      res = ESP_FAIL;
+
       goto retry;
     } else {
       // Display the captured frame on TFT
@@ -311,9 +302,6 @@ static esp_err_t LOOP() {
             draw_face_boxes(&rfb, &results, face_id);
           }
         }
-        //drawArrayJpeg(rfb.data, sizeof(rfb.data), 0, 0);
-
-        //drawBGR888Image(0, 0, rfb.width, rfb.height, rfb.data);
         }
           
         }
@@ -325,24 +313,27 @@ static esp_err_t LOOP() {
         rfb.format = FB_RGB565;
         draw_frame_on_tft(&rfb);
         }
-
       esp_camera_fb_return(fb);
       fb = NULL;
       if(out_buf!=NULL){
         free(out_buf);out_buf=NULL;
         vTaskDelay(pdMS_TO_TICKS(100)); // Delay for 100 milliseconds
       }
+      if((detection_enabled==1&&recognition_enabled==1&&is_enrolling==1)||(detection_enabled==1&&recognition_enabled==1&&is_enrolling==1)){
       spr.pushSprite(0, 0);
       spr.deleteSprite();
       spr.createSprite(160,128);  // Create a sprite of 120x120 pixels
+      }
+
     }
+    }
+    else {vTaskDelay(pdMS_TO_TICKS(500));Serial.println("Cam Is Paused");}
   }
-  return res;
 }
 
 
 
-void startCamera() {
+void CameraSetUP() {
   SD_MMC.setPins(SD_MMC_CLK, SD_MMC_CMD, SD_MMC_D0);
   if (!SD_MMC.begin("/sdcard", true, true, SDMMC_FREQ_DEFAULT, 5)) {
     tft.println("Card Mount Failed");
@@ -368,13 +359,22 @@ void startCamera() {
   pinMode(TFT_BL, OUTPUT);
   digitalWrite(TFT_BL, HIGH);
   tft.init();
-  tft.setRotation(1);         // Set the rotation of the TFT display if needed
+  //tft.setRotation(2);         // Set the rotation of the TFT display if needed
   tft.fillScreen(TFT_BLACK);  // Clear the display
   spr.setColorDepth(16);  // Set color depth (16-bit)
   spr.createSprite(160,128);  // Create a sprite of 120x120 pixels
   recognizer.set_partition(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, "fr");
   recognizer.set_ids_from_flash();  // load ids from flash partition
-  if (LOOP() == ESP_FAIL) {
-    tft.println("Something Unexpected Happens");
-  }
+    // Create the task pinned to core 0
+    xTaskCreatePinnedToCore(
+        runCAM,     // Task function
+        "CamTask",      // Name of the task
+        16384,                   // Stack size (increase if needed)
+        NULL,                   // Task input parameter
+        1,                      // Priority (0-24)
+        NULL,                   // Task handle
+        0                       // Core (0 or 1)
+    );
+
+
 }

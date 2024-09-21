@@ -1,12 +1,35 @@
+/**********************************************
+********** ESP32 V-3.02 MUST BE INSTALLED *****
+***********************************************/
 #include "esp_camera.h"
 #include "esp_core_dump.h"
-#define CAMERA_MODEL_ESP32S3_EYE // Has PSRAM
+#define CAMERA_MODEL_ESP32S3_EYE  // Has PSRAM
 #include "camera_pins.h"
-void startCamera();
+#define UPLOAD_HEAD  //As This Code IS for Head of Marvin
+#include <Marvin.h>
+
+
+String USER_NAME = "", NER_USER_NAME = "";
+unsigned long fr_max_time = 10000;
+unsigned long fr_timer = 0, enrl_timer = 0;
+bool pauseCamTask = false;
+bool fr_res = false;
+int8_t recognition_enabled = 0;
+int8_t is_enrolling = 0;
+int8_t detection_enabled = 1;
+
+
+void CameraSetUP();
+
 
 void setup() {
   Serial.begin(115200);
-  Serial.println();
+  animatorInit();
+  espnowInit();
+  setAnimBaseDir("/Animations");
+  animMode(DONT_USE_INTERNAL_RANDOMNESS);
+  animEnable();
+  animShow("calm");
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer = LEDC_TIMER_0;
@@ -46,7 +69,6 @@ void setup() {
     }
   } else {
     log_i("Please Select Correct Image Format");
-
   }
 
 
@@ -60,12 +82,101 @@ void setup() {
   log_i("Camera Configs Initiated");
   sensor_t *s = esp_camera_sensor_get();
   s->set_vflip(s, 1);
-  s->set_hmirror(s,1);
+  s->set_hmirror(s, 1);
   s->set_framesize(s, FRAMESIZE_240X240);
-  startCamera();
+  CameraSetUP();
 }
 
 void loop() {
-  // Do nothing. Everything is done in another task by the web server
-  delay(10000);
+  if (isCmdAvailable()) {
+
+    String grab = grabCmd();
+    if (grab.indexOf("anim:") != -1) {
+      detection_enabled=1;
+      grab = grab.substring(5, grab.length());
+      animEnable();
+      animShow(grab);
+    } else if (grab.indexOf("disp:") != -1) {
+      setBrightness(100);
+      grab = grab.substring(5, grab.length());
+      grab.trim();
+      Serial.print(grab);
+      Serial.println(grab.compareTo("100%"));
+      sendCmd(grab);
+      if (grab.compareTo("cls") == 0) cls();
+      else if (grab.compareTo("dis") == 0) {
+        cls();
+        animDisable();
+      } else if (grab.compareTo("ena") == 0) {
+        cls();
+        animEnable();
+      } else if (grab.compareTo("0%") == 0) {
+        setBrightness(0);
+      } else if (grab.compareTo("25%") == 0) {
+        setBrightness(25);
+      } else if (grab.compareTo("50%") == 0) {
+        setBrightness(50);
+      } else if (grab.compareTo("75%") == 0) {
+        setBrightness(75);
+      } else if (grab.compareTo("100%") == 0) {
+        setBrightness(100);
+      }
+    } else if (grab.indexOf("face:") != -1) {
+      grab = grab.substring(5, grab.length());
+      if (grab.compareTo("shw0") == 0) {
+        animDisable();
+        detection_enabled = 0;
+        recognition_enabled = 0;
+        is_enrolling = 0;
+      } else if (grab.compareTo("shw1") == 0) {
+        detection_enabled = 0;
+        recognition_enabled = 0;
+        is_enrolling = 0;
+      } else if (grab.compareTo("cam1") == 0) {
+        animDisable();
+        pauseCamTask = true;
+        detection_enabled = 0;
+        recognition_enabled = 0;
+        is_enrolling = 0;
+      } else if (grab.compareTo("cam0") == 0) {
+        pauseCamTask = false;
+        detection_enabled = 1;
+        recognition_enabled = 0;
+        is_enrolling = 0;
+        animEnable();
+        animShow("calm");
+      } else if (grab.compareTo("who") == 0) {
+        USER_NAME="";
+        animDisable();
+        fr_timer = millis();
+        detection_enabled = 1;
+        recognition_enabled = 1;
+        is_enrolling = 0;
+
+      } else if (grab.indexOf("enrl:") != -1) {
+        detection_enabled = 1;
+        recognition_enabled = 1;
+        is_enrolling = 1;
+        NER_USER_NAME = grab.substring(5, grab.length());
+        Serial.println("Please Enroll=>" + NER_USER_NAME);
+      }
+    } else sendCmd("error:404");
+  }
+
+  if(recognition_enabled&&millis()-fr_timer>=fr_max_time){
+    Serial.println("FR TIMEOUT!");
+    recognition_enabled=0;
+    fr_res=true;
+}
+
+  if (fr_res) {
+    detection_enabled = 1;
+    recognition_enabled = 0;
+    is_enrolling = 0;
+    fr_res = false;
+    sendCmd("face:who:" + USER_NAME);
+    animEnable();
+    animShow("calm");
+  }
+  if (Serial.available()) sendCmd(Serial.readString());
 }
