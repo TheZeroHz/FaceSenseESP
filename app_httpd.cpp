@@ -19,13 +19,19 @@
 #include "FS.h"
 #include "LittleFS.h"
 #include "SD_MMC.h"
+#include <SPI.h>
+// JPEG decoder library
+#include <JPEGDecoder.h>
 
+
+// Return the minimum of two values a and b
+#define minimum(a,b)     (((a) < (b)) ? (a) : (b))
 #define SD_MMC_CMD 38  //Please do not modify it.
 #define SD_MMC_CLK 39  //Please do not modify it.
 #define SD_MMC_D0 40   //Please do not modify it.
-static int8_t recognition_enabled = 0;
+static int8_t recognition_enabled =0 ;
 static int8_t is_enrolling = 0;
-static int8_t detection_enabled = 1;
+static int8_t detection_enabled = 0;
 FaceRecognition112V1S8 recognizer;
 // TFT display object
 TFT_eSPI tft = TFT_eSPI();
@@ -40,7 +46,6 @@ TFT_eSprite spr = TFT_eSprite(&tft); // Sprite object for off-screen drawing
 #define FACE_COLOR_YELLOW (FACE_COLOR_RED | FACE_COLOR_GREEN)
 #define FACE_COLOR_CYAN (FACE_COLOR_BLUE | FACE_COLOR_GREEN)
 #define FACE_COLOR_PURPLE (FACE_COLOR_BLUE | FACE_COLOR_RED)
-
 
 struct User {
   int id;
@@ -114,11 +119,11 @@ void draw_frame_on_tft(fb_data_t *fb) {
   tft.setAddrWindow(0, 0, fb->width, fb->height);
   tft.pushImage(0, 0, fb->width, fb->height, (uint16_t *)fb->data);
   if (recognition_enabled) {
-    tft.fillRect(200, 40, 210,50, TFT_GREEN);
+    tft.fillRect(40, 40, 40,50, TFT_GREEN);
   } else if (!recognition_enabled && detection_enabled) {
-    tft.fillRect(200, 40, 210,50, TFT_YELLOW);
+    tft.fillRect(40, 40, 40,50, TFT_YELLOW);
   } else {
-    tft.fillRect(200, 40, 210,50, TFT_BLUE);
+    tft.fillRect(40, 40, 40,50, TFT_BLUE);
   }
   tft.endWrite();
 }
@@ -148,6 +153,16 @@ void drawBGR888Image(int16_t x, int16_t y, int16_t w, int16_t h, const uint8_t *
 tft.endWrite();
 }
 
+// Function to draw a rectangle using a sprite
+void pushFaceBox(TFT_eSprite* sprite, int x, int y, int w, int h, uint16_t color) {
+    sprite->drawFastHLine(x, y, w*0.5, color);        // Top horizontal line
+    sprite->drawFastHLine(x, y + (h*0.5) - 1, w*0.5, color);  // Bottom horizontal line
+    sprite->drawFastVLine(x, y, h*0.5, color);        // Left vertical line
+    sprite->drawFastVLine(x + (w*0.5) - 1, y, h*0.5, color);  // Right vertical line   
+}
+
+
+
 static void draw_face_boxes(fb_data_t *fb, std::list<dl::detect::result_t> *results, int face_id) {
   int x, y, w, h;
   uint32_t color = FACE_COLOR_YELLOW;
@@ -173,15 +188,24 @@ static void draw_face_boxes(fb_data_t *fb, std::list<dl::detect::result_t> *resu
     if ((y + h) > fb->height) {
       h = fb->height - y;
     }
+    Serial.printf("Face Box:\n");
+    Serial.printf("(x0,y0)=(%d,%d)\n",x,y);
+    Serial.printf("(x1,y1)=(%d,%d)\n",x,y+h);
+    Serial.printf("(x2,y2)=(%d,%d)\n",x,y);
+    Serial.printf("(x3,y3)=(%d,%d)\n",x+w,y);
+    // Draw the rectangle as a series of fast lines
+    pushFaceBox(&spr,x,y,w,h,color);
     fb_gfx_drawFastHLine(fb, x, y, w, color);
     fb_gfx_drawFastHLine(fb, x, y + h - 1, w, color);
     fb_gfx_drawFastVLine(fb, x, y, h, color);
     fb_gfx_drawFastVLine(fb, x + w - 1, y, h, color);
     // landmarks (left eye, mouth left, nose, right eye, mouth right)
     int x0, y0, j;
+    //Serial.printf("Face LandMarks:\n");
     for (j = 0; j < 10; j += 2) {
       x0 = (int)prediction->keypoint[j];
       y0 = (int)prediction->keypoint[j + 1];
+      //Serial.printf("(x,y)(%d,%d)\n",x0,y0);
       fb_gfx_fillRect(fb, x0, y0, 3, 3, color);
     }
   }
@@ -199,7 +223,7 @@ static int run_face_recognition(fb_data_t *fb, std::list<dl::detect::result_t> *
     User newPerson;
     id = recognizer.enroll_id(tensor, landmarks, " ", true);
     newPerson.id = id;
-    newPerson.name = person.name;
+    newPerson.name = "rakib";
     newPerson.role = "admin";
     tft.println("trying to add " + newPerson.name);
     delay(10000);
@@ -219,10 +243,12 @@ static int run_face_recognition(fb_data_t *fb, std::list<dl::detect::result_t> *
   face_info_t recognize = recognizer.recognize(tensor, landmarks);
   if (recognize.id >= 0) {
     User knownPerson = searchUserById(recognize.id);
+    Serial.println("Hi, " + knownPerson.role + " " + knownPerson.name);
     tft.println("Hi, " + knownPerson.role + " " + knownPerson.name);
     tft.setTextColor(TFT_GREEN);
     tft.setTextSize(2);
     tft.setCursor(80, 120);
+    Serial.printf("ID[%u]: %.2f", recognize.id, recognize.similarity);
     tft.printf("ID[%u]: %.2f", recognize.id, recognize.similarity);
   } else {
     tft.setTextColor(TFT_RED);
@@ -285,7 +311,9 @@ static esp_err_t LOOP() {
             draw_face_boxes(&rfb, &results, face_id);
           }
         }
-        drawBGR888Image(0, 0, rfb.width, rfb.height, rfb.data);
+        //drawArrayJpeg(rfb.data, sizeof(rfb.data), 0, 0);
+
+        //drawBGR888Image(0, 0, rfb.width, rfb.height, rfb.data);
         }
           
         }
@@ -304,6 +332,9 @@ static esp_err_t LOOP() {
         free(out_buf);out_buf=NULL;
         vTaskDelay(pdMS_TO_TICKS(100)); // Delay for 100 milliseconds
       }
+      spr.pushSprite(0, 0);
+      spr.deleteSprite();
+      spr.createSprite(160,128);  // Create a sprite of 120x120 pixels
     }
   }
   return res;
@@ -339,6 +370,8 @@ void startCamera() {
   tft.init();
   tft.setRotation(1);         // Set the rotation of the TFT display if needed
   tft.fillScreen(TFT_BLACK);  // Clear the display
+  spr.setColorDepth(16);  // Set color depth (16-bit)
+  spr.createSprite(160,128);  // Create a sprite of 120x120 pixels
   recognizer.set_partition(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, "fr");
   recognizer.set_ids_from_flash();  // load ids from flash partition
   if (LOOP() == ESP_FAIL) {
