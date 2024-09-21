@@ -1,0 +1,25 @@
+#######################################
+# Syntax Coloring Map For WifiManagerLite
+#######################################
+
+#######################################
+# Datatypes (KEYWORD1)
+#######################################
+WifiManagerLite	KEYWORD1
+#######################################
+# Methods and Functions (KEYWORD2)
+#######################################
+connect	KEYWORD2
+loadCredentials	KEYWORD2
+updateCredentials	KEYWORD2
+#######################################
+# Instances (KEYWORD2)
+#######################################
+
+#######################################
+# Constants (LITERAL1)
+#######################################
+BEST			LITERAL1
+SELECTED    	LITERAL1
+SERIAL_PRINT        	LITERAL1
+DEFAULT       	LITERAL1
